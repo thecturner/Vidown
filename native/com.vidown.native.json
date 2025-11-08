@@ -1,0 +1,9 @@
+{
+  "name": "com.vidown.native",
+  "description": "Vidown Native Messaging Host",
+  "path": "/usr/local/bin/vidown-native",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://EXTENSION_ID_PLACEHOLDER/"
+  ]
+}
