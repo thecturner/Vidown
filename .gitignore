@@ -36,3 +36,12 @@ Temporary Items
 *.zip
 *.crx
 *.pem
+
+# Node modules
+node_modules/
+package-lock.json
+
+# Native app build artifacts
+native/node_modules/
+native/package-lock.json
+native/com.vidown.native.configured.json
