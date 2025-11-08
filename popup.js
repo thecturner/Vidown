@@ -97,10 +97,8 @@ function createVideoItem(video, itemId) {
   const quality = video.quality || getQualityFromSize(video.width, video.height);
 
   // Check if downloadable
-  const canDownload = mode === 'http' && /^https?:/i.test(url);
+  const canDownload = (mode === 'http' && /^https?:/i.test(url)) || mode === 'hls' || mode === 'dash';
   const downloadLabel = canDownload ? '⬇ Download' :
-                       mode === 'hls' ? '⚠ Requires Native App' :
-                       mode === 'dash' ? '⚠ Requires Native App' :
                        mode === 'blob' ? '⚠ Blob URL (Not Supported)' :
                        '⚠ Not Downloadable';
 
@@ -114,10 +112,11 @@ function createVideoItem(video, itemId) {
       ${size || quality ? `<div class="video-meta">
         ${size ? `📦 ${size}` : ''}
         ${quality ? `<span>${quality}</span>` : ''}
-        ${mode !== 'http' ? `<span style="color:#f39c12">${mode.toUpperCase()}</span>` : ''}
+        ${mode !== 'http' ? `<span style="color:#4CAF50">${mode.toUpperCase()}</span>` : ''}
       </div>` : ''}
       <div class="video-url" title="${url}">${url}</div>
-      ${!canDownload ? `<div style="font-size: 11px; color: #f39c12; margin-bottom: 8px;">⚠ ${mode === 'hls' || mode === 'dash' ? 'Install native companion app for HLS/DASH support' : 'This video type is not supported'}</div>` : ''}
+      ${mode === 'hls' || mode === 'dash' ? `<div style="font-size: 11px; color: #4CAF50; margin-bottom: 8px;">✓ Will use native companion app</div>` : ''}
+      ${!canDownload ? `<div style="font-size: 11px; color: #f39c12; margin-bottom: 8px;">⚠ This video type is not supported</div>` : ''}
       <div class="button-group">
         <button class="download-btn" data-item="${itemId}" ${!canDownload ? 'disabled' : ''}>${downloadLabel}</button>
       </div>
