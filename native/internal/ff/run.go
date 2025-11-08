@@ -33,7 +33,7 @@ func RunFFmpeg(ctx context.Context, args []string, onProgress ProgressCallback) 
 	}
 	fullArgs = append(fullArgs, args...)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", fullArgs...)
+	cmd := exec.CommandContext(ctx, GetFFmpegPath(), fullArgs...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

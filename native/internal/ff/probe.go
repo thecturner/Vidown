@@ -2,36 +2,95 @@ package ff
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
+	"strings"
 )
+
+var ffmpegPath string
+var ffprobePath string
 
 // FFmpegInfo contains ffmpeg availability and version
 type FFmpegInfo struct {
 	Found   bool   `json:"found"`
 	Version string `json:"version,omitempty"`
+	Path    string `json:"path,omitempty"`
 }
 
 // ProbeFFmpeg checks if ffmpeg is available
 func ProbeFFmpeg() FFmpegInfo {
+	// Common installation paths (check these first)
+	commonPaths := []string{
+		"/usr/local/bin/ffmpeg",
+		"/opt/homebrew/bin/ffmpeg",
+		"/usr/bin/ffmpeg",
+		"/opt/local/bin/ffmpeg",
+	}
+
+	// Try common paths first
+	for _, path := range commonPaths {
+		if _, err := os.Stat(path); err == nil {
+			cmd := exec.Command(path, "-version")
+			out, err := cmd.Output()
+			if err == nil {
+				ffmpegPath = path
+				ffprobePath = strings.Replace(path, "ffmpeg", "ffprobe", 1)
+				version := parseVersion(out)
+				return FFmpegInfo{
+					Found:   true,
+					Version: version,
+					Path:    path,
+				}
+			}
+		}
+	}
+
+	// Fallback: try PATH
 	cmd := exec.Command("ffmpeg", "-version")
 	out, err := cmd.Output()
 	if err != nil {
 		return FFmpegInfo{Found: false}
 	}
 
-	// Parse first line for version
-	version := "unknown"
-	if len(out) > 0 {
-		lines := string(out)
-		if len(lines) > 15 {
-			version = lines[:15] // "ffmpeg version X.Y"
-		}
-	}
-
+	ffmpegPath = "ffmpeg"
+	ffprobePath = "ffprobe"
+	version := parseVersion(out)
 	return FFmpegInfo{
 		Found:   true,
 		Version: version,
+		Path:    "ffmpeg (in PATH)",
 	}
+}
+
+func parseVersion(out []byte) string {
+	if len(out) == 0 {
+		return "unknown"
+	}
+	lines := strings.Split(string(out), "\n")
+	if len(lines) > 0 && len(lines[0]) > 7 {
+		// Extract version from "ffmpeg version X.Y ..."
+		parts := strings.Fields(lines[0])
+		if len(parts) >= 3 {
+			return parts[0] + " " + parts[1] + " " + parts[2]
+		}
+	}
+	return "unknown"
+}
+
+// GetFFmpegPath returns the detected ffmpeg path
+func GetFFmpegPath() string {
+	if ffmpegPath == "" {
+		return "ffmpeg"
+	}
+	return ffmpegPath
+}
+
+// GetFFprobePath returns the detected ffprobe path
+func GetFFprobePath() string {
+	if ffprobePath == "" {
+		return "ffprobe"
+	}
+	return ffprobePath
 }
 
 // ProbeResult contains stream information
@@ -68,7 +127,7 @@ func ProbeURL(url string, headers map[string]string) (*ProbeResult, error) {
 
 	args = append(args, url)
 
-	cmd := exec.Command("ffprobe", args...)
+	cmd := exec.Command(GetFFprobePath(), args...)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
