@@ -1,0 +1,39 @@
+{
+  "name": "Vidown - Video Downloader",
+  "description": "Detect and download videos from web pages with smart format detection.",
+  "version": "1.5",
+  "manifest_version": 3,
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "storage",
+    "webRequest",
+    "webNavigation",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Vidown - Download Videos"
+  },
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_script.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
