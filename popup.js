@@ -213,48 +213,28 @@ function renderVideos() {
   container.querySelectorAll(".download-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
       const url = decodeURIComponent(e.target.dataset.url);
-      downloadVideo(url);
+      // Find the video to get size
+      const video = [...netVideos, ...domVideos].find(v => v.url === url || v.src === url);
+      const size = video?.size || video?.sizeBytes || null;
+      downloadVideo(url, size);
     });
   });
 }
 
 // ===== Download =====
 
-async function downloadVideo(url) {
-  setStatus("Downloading...");
+function downloadVideo(url, expectedBytes) {
+  const filename = getDownloadFilename(url);
 
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  // Start download via service worker
+  chrome.runtime.sendMessage({
+    type: "VIDOWN_START_DOWNLOAD",
+    url,
+    filename,
+    expectedTotalBytes: expectedBytes ?? null
+  });
 
-    const blob = await response.blob();
-    const filename = getDownloadFilename(url);
-
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-
-    setTimeout(() => URL.revokeObjectURL(link.href), 100);
-
-    await markAsDownloaded(url);
-    const settings = await loadSettings();
-    await saveToHistory(url, filename, blob.size, settings.downloadPath);
-
-    setStatus(`✓ Downloaded (${formatFileSize(blob.size)})`);
-    await renderDownloadHistory();
-    renderVideos(); // Refresh to show downloaded badge
-  } catch (err) {
-    console.error("Download failed:", err);
-    // Fallback to chrome.downloads API
-    try {
-      chrome.downloads.download({ url, saveAs: false });
-      setStatus("✓ Download started");
-    } catch (_) {
-      chrome.tabs.create({ url });
-      setStatus("⚠ Opened in new tab");
-    }
-  }
+  setStatus("Starting download...");
 }
 
 function getDownloadFilename(url) {
@@ -269,6 +249,41 @@ function getDownloadFilename(url) {
 
   const format = getVideoFormat(url).toLowerCase();
   return `video-${Date.now()}.${format}`;
+}
+
+// Progress bar helpers
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[c]));
+}
+
+function estimatePercent(bytes, total) {
+  if (!total || total <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.floor((bytes / total) * 100)));
+}
+
+function formatEta(eta, speed) {
+  if (eta == null || !Number.isFinite(eta)) {
+    if (speed && speed > 0) return formatSpeed(speed);
+    return "--";
+  }
+  if (eta < 60) return `${eta}s`;
+  const m = Math.floor(eta / 60);
+  const s = eta % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
+function formatSpeed(bps) {
+  const kb = 1024;
+  const mb = kb * 1024;
+  if (bps >= mb) return `${(bps / mb).toFixed(1)} MB/s`;
+  if (bps >= kb) return `${(bps / kb).toFixed(0)} KB/s`;
+  return `${bps | 0} B/s`;
 }
 
 // ===== History =====
@@ -342,11 +357,86 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Listen for DOM videos
+  // Listen for DOM videos and download progress
+  const jobsEl = document.getElementById("jobs");
+  const jobsSection = document.getElementById("jobs-section");
+
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === 'DOM_VIDEOS') {
       domVideos = msg.items || [];
       renderVideos();
+    }
+
+    // Download progress messages
+    if (msg?.type === "VIDOWN_DOWNLOAD_STARTED") {
+      const { downloadId, filename, expectedTotalBytes } = msg.job;
+      jobsSection.style.display = "block";
+
+      const el = document.createElement("div");
+      el.className = "job";
+      el.dataset.id = String(downloadId);
+      el.innerHTML = `
+        <div class="job-row">
+          <span class="job-name">${escapeHtml(filename)}</span>
+          <span class="job-meta"><span class="pct">0%</span> · <span class="eta">--</span></span>
+        </div>
+        <div class="job-bar"><div class="job-fill" style="width:0%"></div></div>`;
+      jobsEl.appendChild(el);
+    }
+
+    if (msg?.type === "VIDOWN_DOWNLOAD_PROGRESS") {
+      const { downloadId, percent, speedBytesPerSec, etaSeconds, expectedTotalBytes, bytesReceived } = msg.job;
+      const el = jobsEl.querySelector(`.job[data-id="${downloadId}"]`);
+      if (!el) return;
+
+      const pct = percent != null ? percent : estimatePercent(bytesReceived, expectedTotalBytes);
+      el.querySelector(".job-fill").style.width = `${pct}%`;
+      el.querySelector(".pct").textContent = `${pct}%`;
+      el.querySelector(".eta").textContent = formatEta(etaSeconds, speedBytesPerSec);
+    }
+
+    if (msg?.type === "VIDOWN_DOWNLOAD_DONE") {
+      const { downloadId, state, url, filename } = msg.job;
+      const el = jobsEl.querySelector(`.job[data-id="${downloadId}"]`);
+      if (!el) return;
+
+      if (state === "complete") {
+        el.querySelector(".pct").textContent = "100%";
+        el.querySelector(".eta").textContent = "Done";
+        el.querySelector(".job-fill").style.width = "100%";
+
+        // Mark as downloaded and save to history
+        markAsDownloaded(url).then(() => {
+          // Try to get size from the completed download
+          chrome.downloads.search({ id: parseInt(downloadId) }, (results) => {
+            if (results && results[0]) {
+              const size = results[0].fileSize || results[0].totalBytes || 0;
+              loadSettings().then(settings => {
+                saveToHistory(url, filename, size, settings.downloadPath);
+                renderDownloadHistory();
+              });
+            }
+          });
+        });
+
+        renderVideos(); // Refresh to show downloaded badge
+
+        setTimeout(() => {
+          el.remove();
+          if (jobsEl.children.length === 0) {
+            jobsSection.style.display = "none";
+          }
+        }, 5000);
+      } else {
+        el.querySelector(".eta").textContent = "Interrupted";
+        el.classList.add("error");
+        setTimeout(() => {
+          el.remove();
+          if (jobsEl.children.length === 0) {
+            jobsSection.style.display = "none";
+          }
+        }, 8000);
+      }
     }
   });
 

@@ -316,6 +316,62 @@
         background: #999;
       }
 
+      /* Download progress bars */
+      .jobs-section {
+        background: white;
+        border-top: 1px solid #e0e0e0;
+        padding: 12px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .job {
+        margin: 8px 0;
+        padding: 8px;
+        background: #f8f9fa;
+        border-radius: 6px;
+      }
+
+      .job-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+
+      .job-name {
+        font-weight: 500;
+        color: #333;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin-right: 12px;
+      }
+
+      .job-meta {
+        color: #666;
+        white-space: nowrap;
+      }
+
+      .job-bar {
+        height: 6px;
+        background: #e0e0e0;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+
+      .job-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #4a90e2 0%, #357abd 100%);
+        transition: width 0.15s linear;
+      }
+
+      .job.error .job-fill {
+        background: #dc3545;
+      }
+
       .history-section {
         background: white;
         border-top: 1px solid #e0e0e0;
@@ -385,18 +441,8 @@
       <button class="refresh-btn" id="scan-all" style="right: 100px;">📑 All Tabs</button>
     </div>
     <div class="progress" id="progress"></div>
-    <div class="download-progress" id="download-progress">
-      <div class="progress-header">
-        <div class="progress-title" id="progress-title">Downloading video...</div>
-        <div class="progress-percent" id="progress-percent">0%</div>
-      </div>
-      <div class="progress-bar-container">
-        <div class="progress-bar-fill" id="progress-bar-fill"></div>
-      </div>
-      <div class="progress-info">
-        <div id="progress-size">0 MB / 0 MB</div>
-        <div class="progress-speed" id="progress-speed">0 MB/s</div>
-      </div>
+    <div class="jobs-section" id="jobs-section" style="display:none;">
+      <div id="jobs"></div>
     </div>
     <div class="content" id="list">
       <div class="empty-state">
