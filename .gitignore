@@ -45,3 +45,8 @@ package-lock.json
 native/node_modules/
 native/package-lock.json
 native/com.vidown.native.configured.json
+native/vidown-native
+native/vidown-native.app
+native/vidown-native.exe
+native/vidown-native-arm64
+native/vidown-native-amd64
