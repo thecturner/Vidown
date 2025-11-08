@@ -167,8 +167,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'VIDOWN_START_DOWNLOAD') {
     const { url, filename, expectedTotalBytes } = msg;
 
+    console.log('[Vidown] Starting download:', { url, filename, expectedTotalBytes });
+
     chrome.downloads.download({ url, filename, saveAs: false }, (downloadId) => {
-      if (chrome.runtime.lastError || downloadId == null) return;
+      if (chrome.runtime.lastError) {
+        console.error('[Vidown] Download failed:', chrome.runtime.lastError);
+        chrome.runtime.sendMessage({
+          type: "VIDOWN_DOWNLOAD_ERROR",
+          error: chrome.runtime.lastError.message,
+          url,
+          filename
+        }).catch(() => {});
+        return;
+      }
+
+      if (downloadId == null) {
+        console.error('[Vidown] Download ID is null');
+        return;
+      }
+
+      console.log('[Vidown] Download started with ID:', downloadId);
 
       DL.set(downloadId, {
         downloadId,

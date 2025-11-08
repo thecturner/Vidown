@@ -226,12 +226,19 @@ function renderVideos() {
 function downloadVideo(url, expectedBytes) {
   const filename = getDownloadFilename(url);
 
+  console.log('[Vidown Popup] Requesting download:', { url, filename, expectedBytes });
+
   // Start download via service worker
   chrome.runtime.sendMessage({
     type: "VIDOWN_START_DOWNLOAD",
     url,
     filename,
     expectedTotalBytes: expectedBytes ?? null
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Vidown Popup] Message send error:', chrome.runtime.lastError);
+      setStatus("⚠ Error: Could not reach service worker");
+    }
   });
 
   setStatus("Starting download...");
@@ -365,6 +372,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (msg?.type === 'DOM_VIDEOS') {
       domVideos = msg.items || [];
       renderVideos();
+    }
+
+    // Download error messages
+    if (msg?.type === "VIDOWN_DOWNLOAD_ERROR") {
+      console.error('[Vidown Popup] Download error:', msg);
+      setStatus(`⚠ Download failed: ${msg.error || 'Unknown error'}`);
+      return;
     }
 
     // Download progress messages
