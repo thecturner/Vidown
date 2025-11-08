@@ -1,205 +1,146 @@
-// service_worker.js
+// service_worker.js - Lean header-based detection
 
-// Store detected video URLs and metadata from network requests
-const detectedVideos = new Map(); // tabId -> Array of {url, title, size}
-const pageMetadata = new Map(); // tabId -> {title, duration}
+// In-memory stores
+const netVideos = new Map();      // url -> { size, type, tabId }
+const blobVideos = [];            // { size, type, ts }
+const byTab = new Map();          // tabId -> { armed: bool }
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("Vidown extension installed.");
+  console.log('Vidown installed');
 });
 
-// Monitor network requests for video files
-chrome.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    const url = details.url;
-    const tabId = details.tabId;
+// Observe response headers for media only
+chrome.webRequest.onHeadersReceived.addListener(
+  details => {
+    try {
+      const ct = header(details.responseHeaders, 'content-type');
+      const cl = header(details.responseHeaders, 'content-length');
+      const isMedia = details.type === 'media' ||
+                      (ct && ct.startsWith('video/')) ||
+                      /\.(mp4|webm|mov|avi|mkv|m4v|flv)($|\?)/i.test(details.url);
 
-    // Skip if no valid tab
-    if (tabId < 0) return;
-
-    // Detect common video formats and streaming protocols
-    if (isVideoUrl(url)) {
-      if (!detectedVideos.has(tabId)) {
-        detectedVideos.set(tabId, []);
-      }
-
-      const videos = detectedVideos.get(tabId);
-
-      // Check if URL already exists
-      if (!videos.find(v => v.url === url)) {
-        videos.push({
-          url: url,
-          title: null, // Will be populated from page metadata
-          size: null
+      if (isMedia) {
+        const size = cl ? parseInt(cl, 10) : undefined;
+        netVideos.set(details.url, {
+          size,
+          type: ct || null,
+          tabId: details.tabId
         });
 
-        // Update badge to show video count
-        updateBadge(tabId);
+        // Update badge for this tab
+        updateBadge(details.tabId);
       }
-    }
-  },
-  { urls: ["<all_urls>"] }
-);
-
-// Listen for response headers to capture Content-Length
-chrome.webRequest.onHeadersReceived.addListener(
-  (details) => {
-    const tabId = details.tabId;
-    if (tabId < 0) return;
-
-    const videos = detectedVideos.get(tabId);
-    if (!videos) return;
-
-    const video = videos.find(v => v.url === details.url);
-    if (video) {
-      // Extract Content-Length from headers
-      const contentLength = details.responseHeaders?.find(
-        h => h.name.toLowerCase() === 'content-length'
-      );
-      if (contentLength && contentLength.value) {
-        video.size = parseInt(contentLength.value, 10);
-      }
-    }
+    } catch (_) { /* swallow */ }
   },
   { urls: ["<all_urls>"] },
   ["responseHeaders"]
 );
 
-// Clean up when tab is closed
+// Helper to read header ignoring case
+function header(headers, name) {
+  const h = headers?.find(h => h.name?.toLowerCase() === name);
+  return h?.value || null;
+}
+
+// Update badge count
+function updateBadge(tabId) {
+  if (tabId < 0) return;
+
+  const count = Array.from(netVideos.values())
+    .filter(v => v.tabId === tabId)
+    .length + blobVideos.length;
+
+  if (count > 0) {
+    chrome.action.setBadgeText({ text: count.toString(), tabId });
+    chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId });
+  }
+}
+
+// Clean up on tab close
 chrome.tabs.onRemoved.addListener((tabId) => {
-  detectedVideos.delete(tabId);
+  byTab.delete(tabId);
+  // Remove videos for this tab
+  for (const [url, video] of netVideos.entries()) {
+    if (video.tabId === tabId) {
+      netVideos.delete(url);
+    }
+  }
 });
 
-// Clean up when navigating to new page
+// Clean up on navigation
 chrome.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId === 0) {
-    detectedVideos.delete(details.tabId);
+    byTab.delete(details.tabId);
+    // Clear videos for this tab
+    for (const [url, video] of netVideos.entries()) {
+      if (video.tabId === details.tabId) {
+        netVideos.delete(url);
+      }
+    }
     chrome.action.setBadgeText({ text: "", tabId: details.tabId });
   }
 });
 
-function isVideoUrl(url) {
-  const lower = url.toLowerCase();
-
-  // Filter out TS segment files (streaming chunks)
-  // TS files are typically named like: segment0.ts, chunk_123.ts, 0001.ts
-  if (/\/[\w-]*\d+\.ts(\?|$)/i.test(lower)) {
-    return false; // These are HLS segments, not complete videos
-  }
-
-  // Common video file extensions (excluding .ts)
-  if (/\.(mp4|webm|ogg|ogv|mov|avi|wmv|flv|mkv|m4v|3gp)(\?|$)/i.test(lower)) {
-    return true;
-  }
-
-  // Streaming protocols (M3U8 playlists and DASH manifests)
-  if (lower.includes('.m3u8') || lower.includes('.mpd')) {
-    return true;
-  }
-
-  // Common video MIME types in URL
-  if (lower.includes('video/') || lower.includes('application/x-mpegurl')) {
-    return true;
-  }
-
-  return false;
-}
-
-function updateBadge(tabId) {
-  const count = detectedVideos.get(tabId)?.length || 0;
-  if (count > 0) {
-    chrome.action.setBadgeText({
-      text: count.toString(),
-      tabId: tabId
-    });
-    chrome.action.setBadgeBackgroundColor({
-      color: "#4CAF50",
-      tabId: tabId
-    });
-  }
-}
-
-// Handle messages from popup and content scripts
+// Messages from content scripts and popup
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.action === "GET_NETWORK_VIDEOS") {
-    const tabId = msg.tabId;
-    const videos = detectedVideos.get(tabId) || [];
-
-    // Try to get page metadata and enrich video data
-    chrome.tabs.get(tabId, (tab) => {
-      const pageTitle = tab.title || 'Unknown';
-
-      // Enrich videos with page title if they don't have one
-      const enrichedVideos = videos.map((v, idx) => ({
-        ...v,
-        title: v.title || pageTitle,
-        index: idx
-      }));
-
-      sendResponse({ ok: true, videos: enrichedVideos });
-    });
-
-    return true; // Keep message channel open for async response
-  }
-
-  if (msg.action === "UPDATE_VIDEO_METADATA") {
-    const tabId = msg.tabId;
-    const metadata = msg.metadata;
-
-    if (pageMetadata.has(tabId)) {
-      pageMetadata.set(tabId, { ...pageMetadata.get(tabId), ...metadata });
-    } else {
-      pageMetadata.set(tabId, metadata);
-    }
-
-    return true;
-  }
-
-  // Handle blob URL detection from content script
-  if (msg.action === "BLOB_VIDEO_DETECTED") {
-    const tabId = sender.tab?.id;
-    if (!tabId || tabId < 0) return true;
-
-    const blobData = msg.data;
-
-    if (!detectedVideos.has(tabId)) {
-      detectedVideos.set(tabId, []);
-    }
-
-    const videos = detectedVideos.get(tabId);
-
-    // Check if blob URL already exists
-    if (!videos.find(v => v.url === blobData.url)) {
-      videos.push({
-        url: blobData.url,
-        title: `Blob Video (${blobData.type || 'unknown'})`,
-        size: blobData.size,
-        isBlob: true
+  if (msg?.type === 'BLOB_META') {
+    // Keep last few only to minimize memory
+    if (msg.meta?.size >= 524288) {
+      blobVideos.push({
+        size: msg.meta.size,
+        type: msg.meta.type,
+        ts: Date.now(),
+        tabId: sender.tab?.id
       });
+      if (blobVideos.length > 50) blobVideos.shift();
 
-      // Update badge
-      updateBadge(tabId);
-    }
-
-    return true;
-  }
-
-  // Handle blob URL revocation
-  if (msg.action === "BLOB_VIDEO_REVOKED") {
-    const tabId = sender.tab?.id;
-    if (!tabId || tabId < 0) return true;
-
-    const videos = detectedVideos.get(tabId);
-    if (videos) {
-      const index = videos.findIndex(v => v.url === msg.data.url);
-      if (index !== -1) {
-        videos.splice(index, 1);
-        updateBadge(tabId);
+      // Update badge for the tab
+      if (sender.tab?.id) {
+        updateBadge(sender.tab.id);
       }
     }
-
-    return true;
+    return;
   }
 
-  return true;
+  if (msg?.type === 'POPUP_OPENED') {
+    const tabId = sender?.tab?.id || msg.tabId;
+    if (tabId != null) {
+      // Arm once per tab
+      if (!byTab.get(tabId)?.armed) {
+        byTab.set(tabId, { armed: true });
+        chrome.tabs.sendMessage(tabId, { type: 'VIDOWN_ARM' }).catch(() => {});
+      }
+      // Ask for a single DOM scan
+      setTimeout(() => {
+        chrome.tabs.sendMessage(tabId, { type: 'SCAN_DOM_VIDEOS' }).catch(() => {});
+      }, 100);
+    }
+    return;
+  }
+
+  if (msg?.type === 'REQUEST_STATE') {
+    const tabId = msg.tabId;
+    // Return a compact snapshot to popup
+    const netForTab = Array.from(netVideos.entries())
+      .filter(([_, v]) => v.tabId === tabId)
+      .slice(-50)
+      .map(([url, v]) => ({ url, ...v }));
+
+    const blobsForTab = blobVideos
+      .filter(b => b.tabId === tabId)
+      .slice(-50);
+
+    sendResponse({
+      type: 'STATE',
+      net: netForTab,
+      blobs: blobsForTab
+    });
+    return;
+  }
 });
+
+// HLS check helper
+function isLikelyHLS(url, type) {
+  return /\.m3u8($|\?)/i.test(url) ||
+         (type && /application\/(vnd\.apple\.mpegurl|x-mpegURL)/i.test(type));
+}
