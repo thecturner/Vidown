@@ -5,14 +5,27 @@ EXTENSION_ID="aigaiddilbifffjcgfocgiaceflchjdn"
 APP_NAME="com.vidown.native"
 MANIFEST_NAME="$APP_NAME.json"
 
-# Build binary
+# Build binary for Linux
 echo "Building vidown-native for Linux..."
 cd "$(dirname "$0")/.."
-go build -o vidown-native cmd/vidown-native/main.go
+
+# Detect architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then
+    GOARCH="amd64"
+elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    GOARCH="arm64"
+else
+    echo "Unsupported architecture: $ARCH"
+    exit 1
+fi
+
+echo "  → Building for $ARCH (GOARCH=$GOARCH)..."
+GOOS=linux GOARCH=$GOARCH go build -o vidown-native cmd/vidown-native/main.go
 
 # Get absolute path to binary
 BINARY_PATH="$(pwd)/vidown-native"
-echo "Binary: $BINARY_PATH"
+echo "✓ Binary created: $BINARY_PATH"
 
 # Create manifest from template
 MANIFEST_DIR="$HOME/.config/google-chrome/NativeMessagingHosts"

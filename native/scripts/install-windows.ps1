@@ -5,15 +5,31 @@ $EXTENSION_ID = "aigaiddilbifffjcgfocgiaceflchjdn"
 $APP_NAME = "com.vidown.native"
 $MANIFEST_NAME = "$APP_NAME.json"
 
-# Build binary
+# Build binary for Windows
 Write-Host "Building vidown-native for Windows..."
 Set-Location (Split-Path -Parent $PSScriptRoot)
+
+# Detect architecture
+$ARCH = $env:PROCESSOR_ARCHITECTURE
+if ($ARCH -eq "AMD64") {
+    $GOARCH = "amd64"
+    Write-Host "  → Building for x64 (amd64)..."
+} elseif ($ARCH -eq "ARM64") {
+    $GOARCH = "arm64"
+    Write-Host "  → Building for ARM64..."
+} else {
+    Write-Error "Unsupported architecture: $ARCH"
+    exit 1
+}
+
+$env:GOOS = "windows"
+$env:GOARCH = $GOARCH
 go build -o vidown-native.exe cmd/vidown-native/main.go
 
 # Get absolute path to binary
 $BINARY_PATH = Join-Path (Get-Location) "vidown-native.exe"
 $BINARY_PATH = $BINARY_PATH -replace "\\", "\\"
-Write-Host "Binary: $BINARY_PATH"
+Write-Host "✓ Binary created: $BINARY_PATH"
 
 # Create manifest
 $MANIFEST_DIR = "$env:APPDATA\Google\Chrome\NativeMessagingHosts"
