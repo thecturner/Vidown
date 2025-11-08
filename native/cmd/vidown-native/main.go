@@ -18,7 +18,10 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	// Send hello message
+	log.Println("[NATIVE] Starting vidown-native...")
 	ffmpegInfo := ff.ProbeFFmpeg()
+	log.Printf("[NATIVE] FFmpeg found: %v, version: %s", ffmpegInfo.Found, ffmpegInfo.Version)
+
 	if err := ipc.Send(ipc.Msg{
 		"type":   "hello",
 		"ok":     true,
@@ -26,6 +29,7 @@ func main() {
 	}); err != nil {
 		log.Fatal("Failed to send hello:", err)
 	}
+	log.Println("[NATIVE] Sent hello message")
 
 	// Create job manager
 	jobManager := job.NewManager()
@@ -33,17 +37,21 @@ func main() {
 	// Read messages from stdin
 	reader := bufio.NewReader(os.Stdin)
 
+	log.Println("[NATIVE] Waiting for messages...")
+
 	for {
 		msg, err := ipc.ReadMsg(reader)
 		if err != nil {
-			log.Println("Read error:", err)
+			log.Println("[NATIVE] Read error:", err)
 			return
 		}
 
 		msgType := ipc.GetString(msg, "type")
+		log.Printf("[NATIVE] Received message: type=%s", msgType)
 
 		switch msgType {
 		case "shutdown":
+			log.Println("[NATIVE] Shutdown requested")
 			return
 
 		case "probe":
@@ -54,9 +62,11 @@ func main() {
 
 		case "cancel":
 			id := ipc.GetString(msg, "id")
+			log.Printf("[NATIVE] Cancel requested for job: %s", id)
 			jobManager.Cancel(id)
 
 		default:
+			log.Printf("[NATIVE] Unknown command: %s", msgType)
 			ipc.Send(ipc.Msg{
 				"type":  "log",
 				"level": "warn",
@@ -109,6 +119,7 @@ func handleDownload(msg ipc.Msg, jobManager *job.Manager) {
 		out = filepath.Join(downloadsDir, out)
 	}
 
+	log.Printf("[NATIVE] Starting download: id=%s, mode=%s, url=%s, out=%s", id, mode, url, out)
 	jobManager.Start(id, mode, url, out, headers, convert, expTotal)
 }
 

@@ -26,10 +26,10 @@ type ProgressCallback func(ProgressUpdate)
 func RunFFmpeg(ctx context.Context, args []string, onProgress ProgressCallback) error {
 	// Prepend standard args
 	fullArgs := []string{
-		"-y",                // overwrite
-		"-v", "quiet",       // minimal logging
+		"-y",                  // overwrite
+		"-v", "error",         // only show errors
+		"-nostats",            // no stats
 		"-progress", "pipe:1", // progress to stdout
-		"-nostats",          // no stats
 	}
 	fullArgs = append(fullArgs, args...)
 
@@ -116,14 +116,16 @@ func logStderr(r io.Reader) {
 
 // BuildHLSArgs constructs ffmpeg args for HLS download
 func BuildHLSArgs(url, output string, headers map[string]string) []string {
-	args := []string{}
+	args := []string{
+		"-user_agent", "Vidown/1.0 (Native Companion)",
+		"-protocol_whitelist", "file,crypto,httpproxy,http,https,tcp,tls",
+	}
 
 	if len(headers) > 0 {
 		args = append(args, "-headers", buildHeaderString(headers))
 	}
 
 	args = append(args,
-		"-protocol_whitelist", "file,crypto,httpproxy,http,https,tcp,tls",
 		"-i", url,
 		"-c:v", "copy",
 		"-c:a", "copy",
@@ -136,7 +138,9 @@ func BuildHLSArgs(url, output string, headers map[string]string) []string {
 
 // BuildDASHArgs constructs ffmpeg args for DASH download
 func BuildDASHArgs(url, output string, headers map[string]string) []string {
-	args := []string{}
+	args := []string{
+		"-user_agent", "Vidown/1.0 (Native Companion)",
+	}
 
 	if len(headers) > 0 {
 		args = append(args, "-headers", buildHeaderString(headers))

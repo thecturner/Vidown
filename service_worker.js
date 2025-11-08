@@ -568,6 +568,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.sendMessage(tabId, { type: 'SCAN_DOM_VIDEOS' }).catch(() => {});
       }, 100);
     }
+
+    // Test native connection
+    if (!nativePort) {
+      console.log('[Vidown] Testing native connection...');
+      connectNative();
+    }
     return;
   }
 

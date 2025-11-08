@@ -3,7 +3,9 @@ package job
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -192,6 +194,8 @@ func (job *Job) run(ctx context.Context) {
 func (job *Job) downloadHLS(ctx context.Context, output string) error {
 	args := ff.BuildHLSArgs(job.URL, output, job.Headers)
 
+	log.Printf("[JOB %s] Running ffmpeg for HLS: ffmpeg %s", job.ID, strings.Join(args, " "))
+
 	return ff.RunFFmpeg(ctx, args, func(update ff.ProgressUpdate) {
 		job.sendProgress(update.BytesWritten, job.ExpTotal)
 	})
@@ -199,6 +203,8 @@ func (job *Job) downloadHLS(ctx context.Context, output string) error {
 
 func (job *Job) downloadDASH(ctx context.Context, output string) error {
 	args := ff.BuildDASHArgs(job.URL, output, job.Headers)
+
+	log.Printf("[JOB %s] Running ffmpeg for DASH: ffmpeg %s", job.ID, strings.Join(args, " "))
 
 	return ff.RunFFmpeg(ctx, args, func(update ff.ProgressUpdate) {
 		job.sendProgress(update.BytesWritten, job.ExpTotal)
@@ -232,6 +238,8 @@ func (job *Job) downloadHTTP(ctx context.Context, output string) error {
 	})
 }
 
+var progressCounter = make(map[string]int)
+
 func (job *Job) sendProgress(bytesReceived, totalBytes int64) {
 	job.mu.Lock()
 	defer job.mu.Unlock()
@@ -242,6 +250,12 @@ func (job *Job) sendProgress(bytesReceived, totalBytes int64) {
 	if dt < 0.5 {
 		// Don't send updates too frequently
 		return
+	}
+
+	// Log first 5 progress updates, then every 5 seconds
+	progressCounter[job.ID]++
+	if progressCounter[job.ID] <= 5 || int(now.Unix())%5 == 0 {
+		log.Printf("[JOB %s] Progress: %d/%d bytes (%.1f%%)", job.ID, bytesReceived, totalBytes, float64(bytesReceived)*100/float64(totalBytes))
 	}
 
 	// Calculate speed with EMA
