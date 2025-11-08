@@ -96,8 +96,16 @@ function createVideoItem(video, itemId) {
   const mode = detectMode(url);
   const quality = video.quality || getQualityFromSize(video.width, video.height);
 
+  // Check if downloadable
+  const canDownload = mode === 'http' && /^https?:/i.test(url);
+  const downloadLabel = canDownload ? '⬇ Download' :
+                       mode === 'hls' ? '⚠ Requires Native App' :
+                       mode === 'dash' ? '⚠ Requires Native App' :
+                       mode === 'blob' ? '⚠ Blob URL (Not Supported)' :
+                       '⚠ Not Downloadable';
+
   div.innerHTML = `
-    <input type="checkbox" class="video-checkbox" data-item="${itemId}" ${selectedVideos.has(itemId) ? 'checked' : ''}>
+    <input type="checkbox" class="video-checkbox" data-item="${itemId}" ${selectedVideos.has(itemId) && canDownload ? 'checked' : ''} ${!canDownload ? 'disabled' : ''}>
     <div class="video-content">
       <div class="video-header">
         <div class="video-title">${video.title || `${format} Video`}</div>
@@ -109,8 +117,9 @@ function createVideoItem(video, itemId) {
         ${mode !== 'http' ? `<span style="color:#f39c12">${mode.toUpperCase()}</span>` : ''}
       </div>` : ''}
       <div class="video-url" title="${url}">${url}</div>
+      ${!canDownload ? `<div style="font-size: 11px; color: #f39c12; margin-bottom: 8px;">⚠ ${mode === 'hls' || mode === 'dash' ? 'Install native companion app for HLS/DASH support' : 'This video type is not supported'}</div>` : ''}
       <div class="button-group">
-        <button class="download-btn" data-item="${itemId}">⬇ Download</button>
+        <button class="download-btn" data-item="${itemId}" ${!canDownload ? 'disabled' : ''}>${downloadLabel}</button>
       </div>
     </div>
   `;

@@ -105,24 +105,45 @@ function startJob(job) {
   activeJobs.set(job.id, job);
   broadcastJobUpdate('JOB_PROGRESS', job);
 
-  if (job.mode === 'http' && !job.headers.Cookie && !job.convert) {
-    // Simple HTTP download via chrome.downloads
-    startChromeDownload(job);
-  } else {
-    // Complex download - delegate to native app
+  // Validate HTTP/HTTPS URLs only for chrome.downloads
+  if (!/^https?:/i.test(job.url)) {
+    console.error('[Vidown] Non-HTTP URL blocked:', job.url);
+    handleJobError(job, `Cannot download ${job.mode} URLs. Use HTTP/HTTPS URLs only.`);
+    return;
+  }
+
+  // Route based on type
+  if (job.mode === 'hls' || job.mode === 'dash') {
+    // HLS/DASH require native app
     startNativeDownload(job);
+  } else if (job.mode === 'blob') {
+    // Blob URLs need special handling
+    handleJobError(job, 'Blob URLs not yet supported. Save video from page instead.');
+  } else {
+    // HTTP/HTTPS - use chrome.downloads (works with cookies automatically)
+    startChromeDownload(job);
   }
 }
 
 function startChromeDownload(job) {
   const filename = job.filenameHint || getFilenameFromUrl(job.url);
 
+  console.log('[Vidown] Starting chrome.downloads:', job.url, filename);
+
   chrome.downloads.download({ url: job.url, filename, saveAs: false }, (downloadId) => {
     if (chrome.runtime.lastError) {
+      console.error('[Vidown] chrome.downloads failed:', chrome.runtime.lastError.message);
       handleJobError(job, chrome.runtime.lastError.message);
       return;
     }
 
+    if (downloadId == null) {
+      console.error('[Vidown] Download ID is null');
+      handleJobError(job, 'Download failed to start');
+      return;
+    }
+
+    console.log('[Vidown] Download started with ID:', downloadId);
     job.downloadId = downloadId;
     DL.set(downloadId, job);
   });
@@ -535,3 +556,8 @@ function isLikelyHLS(url, type) {
   return /\.m3u8($|\?)/i.test(url) ||
          (type && /application\/(vnd\.apple\.mpegurl|x-mpegURL)/i.test(type));
 }
+
+// Debug logging for download progress (can be removed once stable)
+chrome.downloads.onChanged.addListener((d) => {
+  console.log('[DL]', d.id, 'bytes', d.bytesReceived?.current, 'total', d.totalBytes?.current, 'state', d.state?.current);
+});
