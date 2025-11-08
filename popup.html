@@ -9,8 +9,11 @@
 
       body {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        width: 420px;
+        width: 480px;
         background: #f5f5f5;
+        max-height: 600px;
+        display: flex;
+        flex-direction: column;
       }
 
       .header {
@@ -31,87 +34,68 @@
         opacity: 0.9;
       }
 
-      .progress {
-        background: #fff3cd;
-        color: #856404;
-        padding: 10px 16px;
-        font-size: 12px;
-        border-left: 3px solid #ffc107;
-        margin: 12px;
-        border-radius: 4px;
-        display: none;
-      }
-
-      .download-progress {
-        background: white;
-        border-radius: 8px;
-        padding: 16px;
-        margin: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        display: none;
-      }
-
-      .download-progress.active {
-        display: block;
-      }
-
-      .progress-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-      }
-
-      .progress-title {
-        font-weight: 600;
-        font-size: 13px;
-        color: #333;
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .progress-percent {
-        font-weight: 600;
-        font-size: 13px;
-        color: #667eea;
-        margin-left: 12px;
-      }
-
-      .progress-bar-container {
-        width: 100%;
-        height: 8px;
-        background: #e0e0e0;
-        border-radius: 4px;
-        overflow: hidden;
-        position: relative;
-      }
-
-      .progress-bar-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        border-radius: 4px;
-        transition: width 0.3s ease;
-        width: 0%;
-      }
-
-      .progress-info {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 8px;
+      .refresh-btn {
+        position: absolute;
+        top: 14px;
+        right: 20px;
+        background: rgba(255,255,255,0.2);
+        padding: 6px 12px;
         font-size: 11px;
-        color: #666;
+        min-width: auto;
+        border: none;
+        border-radius: 6px;
+        color: white;
+        cursor: pointer;
       }
 
-      .progress-speed {
+      .refresh-btn:hover {
+        background: rgba(255,255,255,0.3);
+      }
+
+      /* Tabs */
+      .tabs {
+        display: flex;
+        background: white;
+        border-bottom: 2px solid #e0e0e0;
+      }
+
+      .tab {
+        flex: 1;
+        padding: 12px 16px;
+        background: none;
+        border: none;
+        border-bottom: 3px solid transparent;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        color: #666;
+        transition: all 0.2s;
+      }
+
+      .tab:hover {
         color: #667eea;
+        background: #f8f9fa;
+      }
+
+      .tab.active {
+        color: #667eea;
+        border-bottom-color: #667eea;
+      }
+
+      .tab-content {
+        display: none;
+        flex: 1;
+        overflow-y: auto;
+        min-height: 300px;
+        max-height: 450px;
+      }
+
+      .tab-content.active {
+        display: block;
       }
 
       .content {
         padding: 12px;
-        max-height: 500px;
-        overflow-y: auto;
       }
 
       .empty-state {
@@ -127,6 +111,7 @@
         opacity: 0.3;
       }
 
+      /* Video Item */
       .section-title {
         font-size: 11px;
         text-transform: uppercase;
@@ -156,28 +141,20 @@
         box-shadow: 0 2px 6px rgba(0,0,0,0.15);
       }
 
-      .video-item.downloaded {
-        border-left: 4px solid #4CAF50;
-        background: #f0f9f4;
+      .video-item.selected {
+        border-left: 4px solid #667eea;
+        background: #f0f3ff;
       }
 
-      .downloaded-badge {
+      .video-checkbox {
         position: absolute;
         top: 12px;
-        right: 12px;
-        background: #4CAF50;
-        color: white;
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-size: 10px;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 4px;
+        left: 12px;
+        cursor: pointer;
       }
 
-      .downloaded-badge::before {
-        content: '✓';
+      .video-content {
+        margin-left: 28px;
       }
 
       .video-header {
@@ -195,7 +172,6 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        line-height: 1.4;
       }
 
       .video-badge {
@@ -206,7 +182,6 @@
         font-size: 10px;
         font-weight: 600;
         text-transform: uppercase;
-        flex-shrink: 0;
         margin-left: 8px;
       }
 
@@ -217,11 +192,6 @@
         display: flex;
         align-items: center;
         gap: 8px;
-      }
-
-      .video-meta.with-duration::before {
-        content: '⏱';
-        opacity: 0.6;
       }
 
       .video-url {
@@ -240,7 +210,6 @@
       .button-group {
         display: flex;
         gap: 6px;
-        flex-wrap: wrap;
       }
 
       button {
@@ -253,8 +222,6 @@
         font-weight: 600;
         cursor: pointer;
         transition: all 0.2s;
-        flex: 1;
-        min-width: 80px;
       }
 
       button:hover {
@@ -263,40 +230,196 @@
         box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
       }
 
-      button:active {
-        transform: translateY(0);
-      }
-
       button:disabled {
         opacity: 0.5;
         cursor: not-allowed;
       }
 
-      button.downloaded {
+      button.secondary {
+        background: #6c757d;
+      }
+
+      button.secondary:hover {
+        background: #5a6268;
+      }
+
+      button.danger {
+        background: #dc3545;
+      }
+
+      button.danger:hover {
+        background: #c82333;
+      }
+
+      /* Queue Item */
+      .queue-item {
+        background: white;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+
+      .queue-item.complete {
+        background: #f0f9f4;
+        border-left: 4px solid #4CAF50;
+      }
+
+      .queue-item.error {
+        background: #fff5f5;
+        border-left: 4px solid #dc3545;
+      }
+
+      .queue-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .queue-filename {
+        font-weight: 600;
+        font-size: 13px;
+        color: #333;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .queue-state {
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 10px;
+        margin-left: 8px;
+      }
+
+      .queue-state.active {
+        background: #667eea;
+        color: white;
+      }
+
+      .queue-state.queued {
+        background: #e0e0e0;
+        color: #666;
+      }
+
+      .queue-state.complete {
         background: #4CAF50;
-        position: relative;
+        color: white;
       }
 
-      button.downloaded::before {
-        content: '✓ ';
+      .queue-state.error {
+        background: #dc3545;
+        color: white;
       }
 
-      button.downloaded:hover {
-        background: #45a049;
+      .progress-bar {
+        height: 6px;
+        background: #e0e0e0;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 8px;
       }
 
-      .refresh-btn {
-        position: absolute;
-        top: 14px;
-        right: 20px;
-        background: rgba(255,255,255,0.2);
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        transition: width 0.15s linear;
+      }
+
+      .queue-meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 8px;
+      }
+
+      .queue-controls {
+        display: flex;
+        gap: 6px;
+      }
+
+      .queue-controls button {
         padding: 6px 12px;
         font-size: 11px;
-        min-width: auto;
       }
 
-      .refresh-btn:hover {
-        background: rgba(255,255,255,0.3);
+      /* Bulk Actions */
+      .bulk-actions {
+        background: white;
+        padding: 12px;
+        border-bottom: 1px solid #e0e0e0;
+        display: none;
+      }
+
+      .bulk-actions.visible {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .bulk-actions .selected-count {
+        font-size: 12px;
+        color: #666;
+        margin-right: auto;
+      }
+
+      .bulk-actions button {
+        padding: 6px 12px;
+        font-size: 11px;
+      }
+
+      /* Settings */
+      .settings-section {
+        background: white;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+
+      .settings-section h3 {
+        font-size: 14px;
+        margin-bottom: 12px;
+        color: #333;
+      }
+
+      .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 1px solid #f0f0f0;
+      }
+
+      .setting-row:last-child {
+        border-bottom: none;
+      }
+
+      .setting-label {
+        font-size: 13px;
+        color: #333;
+      }
+
+      .setting-description {
+        font-size: 11px;
+        color: #999;
+        margin-top: 4px;
+      }
+
+      input[type="text"], input[type="number"], select {
+        padding: 6px 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+
+      input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
       }
 
       ::-webkit-scrollbar {
@@ -315,147 +438,132 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #999;
       }
-
-      /* Download progress bars */
-      .jobs-section {
-        background: white;
-        border-top: 1px solid #e0e0e0;
-        padding: 12px;
-        max-height: 200px;
-        overflow-y: auto;
-      }
-
-      .job {
-        margin: 8px 0;
-        padding: 8px;
-        background: #f8f9fa;
-        border-radius: 6px;
-      }
-
-      .job-row {
-        display: flex;
-        justify-content: space-between;
-        font-size: 12px;
-        margin-bottom: 6px;
-      }
-
-      .job-name {
-        font-weight: 500;
-        color: #333;
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        margin-right: 12px;
-      }
-
-      .job-meta {
-        color: #666;
-        white-space: nowrap;
-      }
-
-      .job-bar {
-        height: 6px;
-        background: #e0e0e0;
-        border-radius: 4px;
-        overflow: hidden;
-      }
-
-      .job-fill {
-        height: 100%;
-        width: 0%;
-        background: linear-gradient(90deg, #4a90e2 0%, #357abd 100%);
-        transition: width 0.15s linear;
-      }
-
-      .job.error .job-fill {
-        background: #dc3545;
-      }
-
-      .history-section {
-        background: white;
-        border-top: 1px solid #e0e0e0;
-        padding: 12px;
-        max-height: 250px;
-        overflow-y: auto;
-      }
-
-      .history-title {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: #666;
-        font-weight: 600;
-        margin-bottom: 12px;
-        padding-left: 4px;
-      }
-
-      .history-item {
-        background: #f8f9fa;
-        border-radius: 6px;
-        padding: 10px 12px;
-        margin-bottom: 8px;
-        font-size: 12px;
-      }
-
-      .history-item:last-child {
-        margin-bottom: 0;
-      }
-
-      .history-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 6px;
-      }
-
-      .history-filename {
-        font-weight: 600;
-        color: #333;
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        margin-right: 8px;
-      }
-
-      .history-date {
-        font-size: 10px;
-        color: #999;
-        white-space: nowrap;
-      }
-
-      .history-meta {
-        display: flex;
-        gap: 12px;
-        font-size: 11px;
-        color: #666;
-      }
     </style>
   </head>
   <body>
     <div class="header">
       <h1>Vidown</h1>
-      <div class="status" id="status">Detecting videos...</div>
+      <div class="status" id="status">Ready</div>
       <button class="refresh-btn" id="refresh">↻ Refresh</button>
-      <button class="refresh-btn" id="scan-all" style="right: 100px;">📑 All Tabs</button>
     </div>
-    <div class="progress" id="progress"></div>
-    <div class="jobs-section" id="jobs-section" style="display:none;">
-      <div id="jobs"></div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="discover">Discover</button>
+      <button class="tab" data-tab="queue">Queue (<span id="queue-count">0</span>)</button>
+      <button class="tab" data-tab="settings">Settings</button>
     </div>
-    <div class="content" id="list">
-      <div class="empty-state">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
-        </svg>
-        <p>Loading...</p>
+
+    <div class="bulk-actions" id="bulk-actions">
+      <span class="selected-count"><span id="selected-count">0</span> selected</span>
+      <button id="bulk-download">⬇ Download</button>
+      <button id="bulk-clear" class="secondary">Clear</button>
+    </div>
+
+    <!-- Discover Tab -->
+    <div id="tab-discover" class="tab-content active">
+      <div class="content" id="discover-list">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+          </svg>
+          <p>Loading...</p>
+        </div>
       </div>
     </div>
-    <div class="history-section">
-      <div class="history-title">Recent Downloads</div>
-      <div id="history-list"></div>
+
+    <!-- Queue Tab -->
+    <div id="tab-queue" class="tab-content">
+      <div class="content" id="queue-list">
+        <div class="empty-state">
+          <p>No downloads in queue</p>
+        </div>
+      </div>
     </div>
+
+    <!-- Settings Tab -->
+    <div id="tab-settings" class="tab-content">
+      <div class="content">
+        <div class="settings-section">
+          <h3>Download Settings</h3>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Default Download Folder</div>
+              <div class="setting-description">Where videos are saved (requires native app)</div>
+            </div>
+            <input type="text" id="setting-download-path" placeholder="~/Downloads" style="width: 200px;">
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Quick Download</div>
+              <div class="setting-description">Skip confirmation dialog</div>
+            </div>
+            <input type="checkbox" id="setting-quick-download">
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Max Concurrent Downloads</div>
+              <div class="setting-description">How many videos to download at once</div>
+            </div>
+            <input type="number" id="setting-max-concurrent" value="2" min="1" max="5" style="width: 60px;">
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Conversion Settings</h3>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Auto-convert to MP4</div>
+              <div class="setting-description">Convert non-MP4 videos automatically</div>
+            </div>
+            <input type="checkbox" id="setting-auto-convert" checked>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Default Container</div>
+              <div class="setting-description">Target format for conversions</div>
+            </div>
+            <select id="setting-default-container">
+              <option value="mp4">MP4</option>
+              <option value="mkv">MKV</option>
+              <option value="webm">WebM</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Merge Audio+Video</div>
+              <div class="setting-description">Combine separate tracks when available</div>
+            </div>
+            <input type="checkbox" id="setting-merge-av" checked>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Advanced</h3>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Smart Naming Rules</div>
+              <div class="setting-description">Edit filename templates</div>
+            </div>
+            <button id="open-naming-editor">Edit Rules</button>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Site Exclusions</div>
+              <div class="setting-description">Domains to ignore</div>
+            </div>
+            <button id="open-exclusions">Manage</button>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Native App Status</div>
+              <div class="setting-description" id="native-status">Not connected</div>
+            </div>
+            <button id="test-native">Test Connection</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="popup.js"></script>
   </body>
 </html>

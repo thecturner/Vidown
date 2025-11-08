@@ -1,10 +1,19 @@
-// service_worker.js - Lean header-based detection
+// service_worker.js - Queue manager and stream downloader
 
 // In-memory stores
 const netVideos = new Map();      // url -> { size, type, tabId }
 const blobVideos = [];            // { size, type, ts }
 const byTab = new Map();          // tabId -> { armed: bool }
 const DL = new Map();             // downloadId -> job state
+
+// Queue management
+const jobQueue = [];              // Array of pending jobs
+const activeJobs = new Map();     // jobId -> job state
+const MAX_CONCURRENT = 2;
+let jobIdCounter = 0;
+
+// Native messaging port
+let nativePort = null;
 
 // Download tracking helpers
 function nowMs() { return Date.now(); }
@@ -37,6 +46,266 @@ function updateSpeedAndEta(job, bytesReceived) {
     : null;
 
   job.lastTick = t;
+}
+
+// ===== Queue Manager =====
+
+function generateJobId() {
+  return `job-${Date.now()}-${++jobIdCounter}`;
+}
+
+function enqueueJob(item, options = {}) {
+  const jobId = generateJobId();
+  const job = {
+    id: jobId,
+    state: 'queued',
+    url: item.url,
+    mode: item.mode || detectMode(item.url),
+    size: item.size || null,
+    headers: item.headers || {},
+    quality: item.quality || '',
+    filenameHint: item.filenameHint || '',
+    convert: options.convert || null,
+    mergeAV: options.mergeAV || false,
+    muxSubtitles: options.muxSubtitles || false,
+    retries: 0,
+    maxRetries: 3,
+    bytesReceived: 0,
+    speedBytesPerSec: 0,
+    etaSeconds: null,
+    percent: 0,
+    error: null,
+    createdAt: nowMs(),
+    lastTick: nowMs()
+  };
+
+  jobQueue.push(job);
+  broadcastJobUpdate('JOB_ADDED', job);
+  processQueue();
+  return jobId;
+}
+
+function detectMode(url) {
+  if (/\.m3u8($|\?)/i.test(url)) return 'hls';
+  if (/\.mpd($|\?)/i.test(url)) return 'dash';
+  if (url.startsWith('blob:')) return 'blob';
+  return 'http';
+}
+
+function processQueue() {
+  // Start jobs up to MAX_CONCURRENT
+  while (activeJobs.size < MAX_CONCURRENT && jobQueue.length > 0) {
+    const job = jobQueue.shift();
+    startJob(job);
+  }
+}
+
+function startJob(job) {
+  job.state = 'active';
+  activeJobs.set(job.id, job);
+  broadcastJobUpdate('JOB_PROGRESS', job);
+
+  if (job.mode === 'http' && !job.headers.Cookie && !job.convert) {
+    // Simple HTTP download via chrome.downloads
+    startChromeDownload(job);
+  } else {
+    // Complex download - delegate to native app
+    startNativeDownload(job);
+  }
+}
+
+function startChromeDownload(job) {
+  const filename = job.filenameHint || getFilenameFromUrl(job.url);
+
+  chrome.downloads.download({ url: job.url, filename, saveAs: false }, (downloadId) => {
+    if (chrome.runtime.lastError) {
+      handleJobError(job, chrome.runtime.lastError.message);
+      return;
+    }
+
+    job.downloadId = downloadId;
+    DL.set(downloadId, job);
+  });
+}
+
+function startNativeDownload(job) {
+  if (!nativePort) {
+    connectNative();
+  }
+
+  if (!nativePort) {
+    handleJobError(job, 'Native companion app not available');
+    return;
+  }
+
+  const msg = {
+    cmd: 'download',
+    id: job.id,
+    mode: job.mode,
+    url: job.url,
+    headers: job.headers,
+    convert: job.convert,
+    mergeAV: job.mergeAV,
+    muxSubtitles: job.muxSubtitles
+  };
+
+  try {
+    nativePort.postMessage(msg);
+  } catch (err) {
+    handleJobError(job, `Native messaging error: ${err.message}`);
+  }
+}
+
+function connectNative() {
+  try {
+    nativePort = chrome.runtime.connectNative('com.vidown.native');
+
+    nativePort.onMessage.addListener((msg) => {
+      handleNativeMessage(msg);
+    });
+
+    nativePort.onDisconnect.addListener(() => {
+      console.error('[Vidown] Native disconnected:', chrome.runtime.lastError);
+      nativePort = null;
+    });
+  } catch (err) {
+    console.error('[Vidown] Cannot connect to native app:', err);
+    nativePort = null;
+  }
+}
+
+function handleNativeMessage(msg) {
+  if (!msg.id) return;
+
+  const job = activeJobs.get(msg.id);
+  if (!job) return;
+
+  if (msg.event === 'progress') {
+    job.bytesReceived = msg.bytesReceived || 0;
+    job.speedBytesPerSec = msg.speedBps || 0;
+    job.etaSeconds = msg.etaSec || null;
+    job.percent = job.size ? fmtPercent(job.bytesReceived, job.size) : null;
+    broadcastJobUpdate('JOB_PROGRESS', job);
+  } else if (msg.event === 'done') {
+    completeJob(job, msg.path);
+  } else if (msg.event === 'error') {
+    handleJobError(job, msg.error);
+  }
+}
+
+function completeJob(job, path = null) {
+  job.state = 'complete';
+  job.percent = 100;
+  job.path = path;
+  activeJobs.delete(job.id);
+  broadcastJobUpdate('JOB_DONE', job);
+  processQueue();
+}
+
+function handleJobError(job, error) {
+  console.error(`[Vidown] Job ${job.id} error:`, error);
+
+  job.retries++;
+  if (job.retries < job.maxRetries) {
+    // Retry with exponential backoff
+    const delay = Math.min(1000 * Math.pow(2, job.retries), 30000);
+    job.state = 'retrying';
+    job.error = `${error} (retry ${job.retries}/${job.maxRetries})`;
+    broadcastJobUpdate('JOB_PROGRESS', job);
+
+    setTimeout(() => {
+      activeJobs.delete(job.id);
+      jobQueue.unshift(job); // Put back at front
+      processQueue();
+    }, delay);
+  } else {
+    job.state = 'error';
+    job.error = error;
+    activeJobs.delete(job.id);
+    broadcastJobUpdate('JOB_ERROR', job);
+    processQueue();
+  }
+}
+
+function pauseJob(jobId) {
+  const job = activeJobs.get(jobId);
+  if (!job) return;
+
+  job.state = 'paused';
+  if (job.downloadId) {
+    chrome.downloads.pause(job.downloadId);
+  }
+  // TODO: Send pause to native app
+  broadcastJobUpdate('JOB_PROGRESS', job);
+}
+
+function resumeJob(jobId) {
+  const job = activeJobs.get(jobId);
+  if (!job) return;
+
+  job.state = 'active';
+  if (job.downloadId) {
+    chrome.downloads.resume(job.downloadId);
+  }
+  // TODO: Send resume to native app
+  broadcastJobUpdate('JOB_PROGRESS', job);
+}
+
+function cancelJob(jobId) {
+  const job = activeJobs.get(jobId);
+  if (!job) {
+    // Check if queued
+    const idx = jobQueue.findIndex(j => j.id === jobId);
+    if (idx >= 0) {
+      const removed = jobQueue.splice(idx, 1)[0];
+      removed.state = 'cancelled';
+      broadcastJobUpdate('JOB_ERROR', removed);
+    }
+    return;
+  }
+
+  if (job.downloadId) {
+    chrome.downloads.cancel(job.downloadId);
+  }
+
+  // TODO: Send cancel to native app
+
+  job.state = 'cancelled';
+  activeJobs.delete(jobId);
+  broadcastJobUpdate('JOB_ERROR', job);
+  processQueue();
+}
+
+function broadcastJobUpdate(type, job) {
+  const msg = {
+    type,
+    job: {
+      id: job.id,
+      state: job.state,
+      filename: job.filenameHint,
+      percent: job.percent,
+      speedBytesPerSec: job.speedBytesPerSec,
+      etaSeconds: job.etaSeconds,
+      bytesReceived: job.bytesReceived,
+      size: job.size,
+      error: job.error,
+      path: job.path
+    }
+  };
+
+  chrome.runtime.sendMessage(msg).catch(() => {});
+}
+
+function getFilenameFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const filename = pathname.split('/').pop();
+    if (filename && filename.includes('.')) {
+      return filename.split('?')[0];
+    }
+  } catch (_) {}
+  return `video-${Date.now()}.mp4`;
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -122,96 +391,87 @@ chrome.downloads.onChanged.addListener(delta => {
   if (!job) return;
 
   if (delta.totalBytes && delta.totalBytes.current > 0) {
-    job.expectedTotalBytes = job.expectedTotalBytes ?? delta.totalBytes.current;
+    job.size = job.size ?? delta.totalBytes.current;
   }
 
   if (delta.bytesReceived) {
     job.bytesReceived = delta.bytesReceived.current;
 
     // Compute percent with fallback
-    const total = job.expectedTotalBytes || delta.totalBytes?.current || 0;
-    job.percent = fmtPercent(job.bytesReceived, total) ?? null;
+    const total = job.size || delta.totalBytes?.current || 0;
+    job.percent = fmtPercent(job.bytesReceived, total) ?? 0;
 
     updateSpeedAndEta(job, job.bytesReceived);
 
-    chrome.runtime.sendMessage({
-      type: "VIDOWN_DOWNLOAD_PROGRESS",
-      job: {
-        downloadId: id,
-        bytesReceived: job.bytesReceived,
-        expectedTotalBytes: total || null,
-        percent: job.percent,
-        speedBytesPerSec: job.speedBytesPerSec,
-        etaSeconds: job.etaSeconds,
-        state: "in_progress"
-      }
-    }).catch(() => {});
+    broadcastJobUpdate('JOB_PROGRESS', job);
   }
 
   if (delta.state && delta.state.current) {
     const st = delta.state.current;
-    if (st === "complete" || st === "interrupted") {
-      job.state = st;
-      chrome.runtime.sendMessage({
-        type: "VIDOWN_DOWNLOAD_DONE",
-        job: { downloadId: id, state: st, filename: job.filename, url: job.url }
-      }).catch(() => {});
-      // Keep a short while then free memory
-      setTimeout(() => DL.delete(id), 30000);
+    if (st === "complete") {
+      completeJob(job);
+      DL.delete(id);
+    } else if (st === "interrupted") {
+      handleJobError(job, 'Download interrupted');
+      DL.delete(id);
     }
   }
 });
 
 // Messages from content scripts and popup
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // New queue-based download
+  if (msg?.type === 'VIDOWN_ENQUEUE') {
+    const jobId = enqueueJob(msg.item, msg.options);
+    sendResponse({ success: true, jobId });
+    return true;
+  }
+
+  // Job control
+  if (msg?.type === 'VIDOWN_PAUSE_JOB') {
+    pauseJob(msg.jobId);
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (msg?.type === 'VIDOWN_RESUME_JOB') {
+    resumeJob(msg.jobId);
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (msg?.type === 'VIDOWN_CANCEL_JOB') {
+    cancelJob(msg.jobId);
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (msg?.type === 'VIDOWN_GET_QUEUE') {
+    const allJobs = [
+      ...Array.from(activeJobs.values()),
+      ...jobQueue
+    ].map(j => ({
+      id: j.id,
+      state: j.state,
+      filename: j.filenameHint,
+      percent: j.percent,
+      speedBytesPerSec: j.speedBytesPerSec,
+      etaSeconds: j.etaSeconds,
+      error: j.error
+    }));
+    sendResponse({ jobs: allJobs });
+    return true;
+  }
+
+  // Legacy direct download (kept for backward compatibility)
   if (msg?.type === 'VIDOWN_START_DOWNLOAD') {
-    const { url, filename, expectedTotalBytes } = msg;
-
-    console.log('[Vidown] Starting download:', { url, filename, expectedTotalBytes });
-
-    chrome.downloads.download({ url, filename, saveAs: false }, (downloadId) => {
-      if (chrome.runtime.lastError) {
-        console.error('[Vidown] Download failed:', chrome.runtime.lastError);
-        chrome.runtime.sendMessage({
-          type: "VIDOWN_DOWNLOAD_ERROR",
-          error: chrome.runtime.lastError.message,
-          url,
-          filename
-        }).catch(() => {});
-        sendResponse({ success: false, error: chrome.runtime.lastError.message });
-        return;
-      }
-
-      if (downloadId == null) {
-        console.error('[Vidown] Download ID is null');
-        sendResponse({ success: false, error: 'Download ID is null' });
-        return;
-      }
-
-      console.log('[Vidown] Download started with ID:', downloadId);
-
-      DL.set(downloadId, {
-        downloadId,
-        url,
-        filename,
-        expectedTotalBytes: Number.isFinite(expectedTotalBytes) ? expectedTotalBytes : null,
-        bytesReceived: 0,
-        percent: 0,
-        speedBytesPerSec: 0,
-        etaSeconds: null,
-        state: "in_progress",
-        lastTick: nowMs()
-      });
-
-      chrome.runtime.sendMessage({
-        type: "VIDOWN_DOWNLOAD_STARTED",
-        job: { downloadId, url, filename, expectedTotalBytes }
-      }).catch(() => {});
-
-      sendResponse({ success: true, downloadId });
+    const jobId = enqueueJob({
+      url: msg.url,
+      filenameHint: msg.filename,
+      size: msg.expectedTotalBytes
     });
-
-    return true; // Keep message channel open for async response
+    sendResponse({ success: true, jobId });
+    return true;
   }
 
   if (msg?.type === 'BLOB_META') {

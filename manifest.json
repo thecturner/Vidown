@@ -1,14 +1,15 @@
 {
   "name": "Vidown - Video Downloader",
   "description": "Detect and download videos from web pages with smart format detection.",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "manifest_version": 3,
   "permissions": [
     "storage",
     "downloads",
     "webRequest",
     "webNavigation",
-    "scripting"
+    "scripting",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"
