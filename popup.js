@@ -238,7 +238,16 @@ function downloadVideo(url, expectedBytes) {
     if (chrome.runtime.lastError) {
       console.error('[Vidown Popup] Message send error:', chrome.runtime.lastError);
       setStatus("⚠ Error: Could not reach service worker");
+      return;
     }
+
+    if (response && !response.success) {
+      console.error('[Vidown Popup] Download failed:', response.error);
+      setStatus(`⚠ Download failed: ${response.error}`);
+      return;
+    }
+
+    console.log('[Vidown Popup] Download started successfully:', response);
   });
 
   setStatus("Starting download...");

@@ -178,11 +178,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           url,
           filename
         }).catch(() => {});
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
         return;
       }
 
       if (downloadId == null) {
         console.error('[Vidown] Download ID is null');
+        sendResponse({ success: false, error: 'Download ID is null' });
         return;
       }
 
@@ -205,9 +207,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         type: "VIDOWN_DOWNLOAD_STARTED",
         job: { downloadId, url, filename, expectedTotalBytes }
       }).catch(() => {});
+
+      sendResponse({ success: true, downloadId });
     });
 
-    return;
+    return true; // Keep message channel open for async response
   }
 
   if (msg?.type === 'BLOB_META') {
@@ -262,7 +266,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       net: netForTab,
       blobs: blobsForTab
     });
-    return;
+    return true; // Indicate synchronous response sent
   }
 });
 
