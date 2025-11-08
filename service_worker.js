@@ -155,20 +155,25 @@ function startNativeDownload(job) {
   }
 
   if (!nativePort) {
-    handleJobError(job, 'Native companion app not available');
+    handleJobError(job, 'Native companion app not available. Run install script: native/scripts/install-macos.sh');
     return;
   }
 
+  // Generate output filename (native app will prepend Downloads dir)
+  const filename = job.filenameHint || getFilenameFromUrl(job.url);
+
   const msg = {
-    cmd: 'download',
+    type: 'download',
     id: job.id,
     mode: job.mode,
     url: job.url,
+    out: filename,
     headers: job.headers,
-    convert: job.convert,
-    mergeAV: job.mergeAV,
-    muxSubtitles: job.muxSubtitles
+    expectedTotalBytes: job.size || 0,
+    convert: job.convert || { container: 'mp4', vcodec: 'copy', acodec: 'copy' }
   };
+
+  console.log('[Vidown] Starting native download:', msg);
 
   try {
     nativePort.postMessage(msg);
@@ -182,13 +187,17 @@ function connectNative() {
     nativePort = chrome.runtime.connectNative('com.vidown.native');
 
     nativePort.onMessage.addListener((msg) => {
+      console.log('[Vidown] Native message:', msg);
       handleNativeMessage(msg);
     });
 
     nativePort.onDisconnect.addListener(() => {
-      console.error('[Vidown] Native disconnected:', chrome.runtime.lastError);
+      const err = chrome.runtime.lastError?.message || 'Unknown error';
+      console.error('[Vidown] Native disconnected:', err);
       nativePort = null;
     });
+
+    console.log('[Vidown] Connected to native app');
   } catch (err) {
     console.error('[Vidown] Cannot connect to native app:', err);
     nativePort = null;
@@ -196,21 +205,46 @@ function connectNative() {
 }
 
 function handleNativeMessage(msg) {
+  // Handle hello message
+  if (msg.type === 'hello') {
+    console.log('[Vidown] Native app connected:', msg.ffmpeg);
+    return;
+  }
+
+  // Handle probe-result
+  if (msg.type === 'probe-result') {
+    console.log('[Vidown] Probe result:', msg.result);
+    return;
+  }
+
+  // All other messages need an id
   if (!msg.id) return;
 
   const job = activeJobs.get(msg.id);
-  if (!job) return;
+  if (!job) {
+    console.warn('[Vidown] Received message for unknown job:', msg.id);
+    return;
+  }
 
-  if (msg.event === 'progress') {
+  if (msg.type === 'job-started') {
+    console.log('[Vidown] Job started:', msg.id, msg.out);
+    job.path = msg.out;
+  } else if (msg.type === 'progress') {
     job.bytesReceived = msg.bytesReceived || 0;
     job.speedBytesPerSec = msg.speedBps || 0;
     job.etaSeconds = msg.etaSec || null;
-    job.percent = job.size ? fmtPercent(job.bytesReceived, job.size) : null;
+    job.percent = msg.percent || (msg.totalBytes > 0 ? fmtPercent(msg.bytesReceived, msg.totalBytes) : 0);
     broadcastJobUpdate('JOB_PROGRESS', job);
-  } else if (msg.event === 'done') {
-    completeJob(job, msg.path);
-  } else if (msg.event === 'error') {
-    handleJobError(job, msg.error);
+  } else if (msg.type === 'done') {
+    job.path = msg.final || job.path;
+    completeJob(job, job.path);
+  } else if (msg.type === 'canceled') {
+    job.state = 'cancelled';
+    activeJobs.delete(job.id);
+    broadcastJobUpdate('JOB_ERROR', job);
+    processQueue();
+  } else if (msg.type === 'error') {
+    handleJobError(job, msg.msg || msg.code);
   }
 }
 
@@ -289,7 +323,14 @@ function cancelJob(jobId) {
     chrome.downloads.cancel(job.downloadId);
   }
 
-  // TODO: Send cancel to native app
+  // Send cancel to native app
+  if ((job.mode === 'hls' || job.mode === 'dash') && nativePort) {
+    try {
+      nativePort.postMessage({ type: 'cancel', id: jobId });
+    } catch (err) {
+      console.error('[Vidown] Failed to send cancel to native:', err);
+    }
+  }
 
   job.state = 'cancelled';
   activeJobs.delete(jobId);
